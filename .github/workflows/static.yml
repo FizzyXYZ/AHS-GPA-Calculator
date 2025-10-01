@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AHS Weighted GPA Calculator (Clockers)</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Set default font to Inter -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f7f7;
+            color: #1f2937; /* Dark Gray for text */
+        }
+        /* Ashland High School Colors */
+        .ahs-blue { background-color: #1e3a8a; } /* Dark Blue */
+        .ahs-red { background-color: #b91c1c; } /* Dark Red */
+        .ahs-text-blue { color: #1e3a8a; }
+        .ahs-text-red { color: #b91c1c; }
+    </style>
+    <script>
+        // Initialize an empty object for Firebase configuration
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'ahs-gpa-calculator';
+    </script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // Set Firebase logging level (optional, but good for debugging)
+        setLogLevel('Debug');
+
+        // Firebase Initialization and Auth Setup
+        let app;
+        let auth;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const authStatusElement = document.getElementById('auth-status');
+            
+            try {
+                if (Object.keys(firebaseConfig).length > 0) {
+                    app = initializeApp(firebaseConfig);
+                    auth = getAuth(app);
+                    
+                    authStatusElement.textContent = "Initializing Authentication...";
+
+                    onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            authStatusElement.textContent = `User ID: ${user.uid}`;
+                        } else {
+                            // Attempt to sign in using the custom token provided by the environment
+                            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                            
+                            try {
+                                if (initialAuthToken) {
+                                    await signInWithCustomToken(auth, initialAuthToken);
+                                    authStatusElement.textContent = `User ID: ${auth.currentUser.uid} (Authenticated)`;
+                                } else {
+                                    // Fallback to anonymous sign-in if no token is available
+                                    await signInAnonymously(auth);
+                                    authStatusElement.textContent = `User ID: ${auth.currentUser.uid} (Anonymous)`;
+                                }
+                            } catch (error) {
+                                console.error("Firebase Auth Error:", error);
+                                authStatusElement.textContent = "Authentication Failed (Check Console)";
+                            }
+                        }
+                    });
+                } else {
+                    authStatusElement.textContent = "Firebase is not configured.";
+                }
+            } catch (error) {
+                console.error("Firebase Initialization Error:", error);
+                authStatusElement.textContent = "Firebase Initialization Failed (Check Console)";
+            }
+        });
+    </script>
+</head>
+<body class="min-h-screen p-4 sm:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <!-- Header & Branding -->
+        <header class="text-center py-6 px-4 mb-8 ahs-blue text-white rounded-xl shadow-lg">
+            <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight">
+                <span class="ahs-text-red text-4xl sm:text-5xl font-black">A</span>shland <span class="ahs-text-red text-4xl sm:text-5xl font-black">H</span>igh <span class="ahs-text-red text-4xl sm:text-5xl font-black">S</span>chool
+            </h1>
+            <h2 class="text-xl sm:text-2xl font-semibold mt-1">Weighted GPA Calculator</h2>
+            <p class="text-sm font-light italic">Clockers Pride! Based on the 4.0 Weighted Rank Scale.</p>
+            <div id="auth-status" class="text-xs mt-2 opacity-75">Loading authentication status...</div>
+        </header>
+
+        <!-- Main GPA Calculator -->
+        <main class="bg-white p-6 md:p-8 rounded-xl shadow-2xl">
+            <h3 class="text-2xl font-bold mb-6 ahs-text-blue">Your Courses</h3>
+            
+            <!-- Course List Container -->
+            <div id="courses-container" class="space-y-4">
+                <!-- Initial Course Row Template -->
+            </div>
+
+            <button onclick="addCourse()" class="w-full mt-6 py-3 px-6 ahs-red text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition duration-300">
+                + Add Another Course
+            </button>
+
+            <!-- Results Section -->
+            <div class="mt-8 pt-6 border-t border-gray-200">
+                <h3 class="text-2xl font-bold ahs-text-blue mb-4">Results</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="p-4 rounded-lg bg-gray-100 shadow-inner">
+                        <p class="text-sm font-medium">Total Weighted Points</p>
+                        <p id="total-weighted-points" class="text-3xl font-extrabold ahs-text-blue">0.00</p>
+                    </div>
+                    <div class="p-4 rounded-lg bg-gray-100 shadow-inner">
+                        <p class="text-sm font-medium">Total Credits</p>
+                        <p id="total-credits" class="text-3xl font-extrabold ahs-text-blue">0.0</p>
+                    </div>
+                    <div class="sm:col-span-2 p-6 rounded-lg ahs-blue text-white shadow-xl">
+                        <p class="text-base font-medium">Calculated Weighted GPA</p>
+                        <p id="final-gpa" class="text-5xl font-black mt-1">0.000</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Message Area -->
+            <div id="message-box" class="mt-4 p-3 hidden rounded-lg ahs-red text-white text-sm"></div>
+
+        </main>
+        
+        <!-- Full GPA Scale Reference -->
+        <div class="mt-12 p-6 bg-white rounded-xl shadow-2xl">
+            <h3 class="text-2xl font-bold ahs-text-blue mb-4 border-b pb-2">Full Weighted Rank Scale (60-100)</h3>
+            <p class="text-sm text-gray-600 mb-4">This table explicitly details the weighted point value for every numeric grade from 60 through 100 for all three course levels, as required by the scale.</p>
+            
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CP</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Honors</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">AP</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scale-table-body" class="bg-white divide-y divide-gray-200 text-sm">
+                        <!-- Scale rows will be generated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- GPA SCALE DATA ---
+        // Contains the weighted point values for every numeric grade from 100 down to 60.
+        // F (below 60) is always 0.0 for all levels.
+        const GPA_SCALE = {
+            100: { cp: 4.5, h: 5.0, ap: 5.5 }, 99: { cp: 4.4, h: 4.9, ap: 5.4 }, 98: { cp: 4.3, h: 4.8, ap: 5.3 }, 97: { cp: 4.2, h: 4.7, ap: 5.2 }, 96: { cp: 4.1, h: 4.6, ap: 5.1 },
+            95: { cp: 4.0, h: 4.5, ap: 5.0 }, 94: { cp: 3.9, h: 4.4, ap: 4.9 }, 93: { cp: 3.8, h: 4.3, ap: 4.8 }, 92: { cp: 3.7, h: 4.2, ap: 4.7 }, 91: { cp: 3.6, h: 4.1, ap: 4.6 },
+            90: { cp: 3.5, h: 4.0, ap: 4.5 }, 89: { cp: 3.4, h: 3.9, ap: 4.4 }, 88: { cp: 3.3, h: 3.8, ap: 4.3 }, 87: { cp: 3.2, h: 3.7, ap: 4.2 }, 86: { cp: 3.1, h: 3.6, ap: 4.1 },
+            85: { cp: 3.0, h: 3.5, ap: 4.0 }, 84: { cp: 2.9, h: 3.4, ap: 3.9 }, 83: { cp: 2.8, h: 3.3, ap: 3.8 }, 82: { cp: 2.7, h: 3.2, ap: 3.7 }, 81: { cp: 2.6, h: 3.1, ap: 3.6 },
+            80: { cp: 2.5, h: 3.0, ap: 3.5 }, 79: { cp: 2.4, h: 2.9, ap: 3.4 }, 78: { cp: 2.3, h: 2.8, ap: 3.3 }, 77: { cp: 2.2, h: 2.7, ap: 3.2 }, 76: { cp: 2.1, h: 2.6, ap: 3.1 },
+            75: { cp: 2.0, h: 2.5, ap: 3.0 }, 74: { cp: 1.9, h: 2.4, ap: 2.9 }, 73: { cp: 1.8, h: 2.3, ap: 2.8 }, 72: { cp: 1.7, h: 2.2, ap: 2.7 }, 71: { cp: 1.6, h: 2.1, ap: 2.6 },
+            70: { cp: 1.5, h: 2.0, ap: 2.5 }, 69: { cp: 1.4, h: 1.9, ap: 2.4 }, 68: { cp: 1.3, h: 1.8, ap: 2.3 }, 67: { cp: 1.2, h: 1.7, ap: 2.2 }, 66: { cp: 1.1, h: 1.6, ap: 2.1 },
+            65: { cp: 1.0, h: 1.5, ap: 2.0 }, 64: { cp: 0.9, h: 1.4, ap: 1.9 }, 63: { cp: 0.8, h: 1.3, ap: 1.8 }, 62: { cp: 0.7, h: 1.2, ap: 1.7 }, 61: { cp: 0.6, h: 1.1, ap: 1.6 },
+            60: { cp: 0.5, h: 1.0, ap: 1.5 },
+        };
+
+        let courseCount = 0;
+
+        /**
+         * Generates the HTML for a single course input row.
+         * @param {number} id - The unique ID for the course.
+         */
+        function createCourseRow(id) {
+            return `
+                <div id="course-row-${id}" class="course-row p-4 border border-gray-200 rounded-lg bg-gray-50 transition duration-300 hover:shadow-md">
+                    <div class="flex justify-between items-start mb-3">
+                        <h4 class="font-semibold ahs-text-blue">Course ${id + 1}</h4>
+                        <button onclick="removeCourse(${id})" class="text-gray-400 hover:text-red-500 transition duration-150" aria-label="Remove Course">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="md:col-span-1">
+                            <label for="grade-${id}" class="block text-xs font-medium text-gray-700">Numeric Grade (0-100)</label>
+                            <input type="number" id="grade-${id}" oninput="calculateGPA()" min="0" max="100" placeholder="e.g., 92" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
+                        </div>
+                        
+                        <div class="md:col-span-2">
+                            <label for="level-${id}" class="block text-xs font-medium text-gray-700">Course Level</label>
+                            <select id="level-${id}" onchange="calculateGPA()" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white">
+                                <option value="cp">College Prep</option>
+                                <option value="h">Honors</option>
+                                <option value="ap">Advanced Placement (AP)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="md:col-span-1">
+                            <label for="credits-${id}" class="block text-xs font-medium text-gray-700">Credits (e.g., 1.0 or 0.5)</label>
+                            <input type="number" id="credits-${id}" oninput="calculateGPA()" min="0" step="0.5" value="1.0" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        /**
+         * Adds a new course row to the container.
+         */
+        function addCourse() {
+            const container = document.getElementById('courses-container');
+            const newRow = document.createElement('div');
+            newRow.innerHTML = createCourseRow(courseCount);
+            container.appendChild(newRow.firstElementChild);
+            courseCount++;
+            calculateGPA();
+        }
+
+        /**
+         * Removes a course row from the container.
+         * @param {number} id - The ID of the course row to remove.
+         */
+        function removeCourse(id) {
+            const row = document.getElementById(`course-row-${id}`);
+            if (row) {
+                row.remove();
+                // We don't decrement courseCount to keep IDs unique for the session,
+                // but we recalculate the GPA based on remaining elements.
+                calculateGPA();
+            }
+        }
+
+        /**
+         * Calculates the weighted GPA based on all current inputs.
+         */
+        function calculateGPA() {
+            let totalWeightedPoints = 0;
+            let totalCredits = 0;
+            const courses = document.querySelectorAll('.course-row');
+            const messageBox = document.getElementById('message-box');
+            let hasError = false;
+
+            courses.forEach(course => {
+                const id = course.id.split('-').pop();
+                const gradeInput = document.getElementById(`grade-${id}`);
+                const levelSelect = document.getElementById(`level-${id}`);
+                const creditsInput = document.getElementById(`credits-${id}`);
+
+                const grade = parseInt(gradeInput.value);
+                const level = levelSelect.value;
+                const credits = parseFloat(creditsInput.value);
+
+                // Basic Input Validation
+                if (isNaN(grade) || grade < 0 || grade > 100) {
+                    messageBox.textContent = "Please ensure all numeric grades are between 0 and 100.";
+                    messageBox.classList.remove('hidden');
+                    hasError = true;
+                    return; // Skip calculation for this row
+                }
+                if (isNaN(credits) || credits <= 0) {
+                     messageBox.textContent = "Please ensure all courses have a positive credit value (e.g., 1.0 or 0.5).";
+                    messageBox.classList.remove('hidden');
+                    hasError = true;
+                    return; // Skip calculation for this row
+                }
+
+                // Determine GPA Point Value based on the scale
+                let pointValue = 0;
+                
+                if (grade >= 60 && grade <= 100) {
+                    // Use the exact lookup table for grades 60-100
+                    pointValue = GPA_SCALE[grade][level];
+                } else if (grade < 60) {
+                    // Grades below 60 (F) are 0.0, as per the scale provided
+                    pointValue = 0.0;
+                }
+                
+                // Calculation
+                const weightedPoints = pointValue * credits;
+                
+                totalWeightedPoints += weightedPoints;
+                totalCredits += credits;
+            });
+            
+            // Handle display updates
+            if (hasError) {
+                document.getElementById('total-weighted-points').textContent = '—';
+                document.getElementById('total-credits').textContent = '—';
+                document.getElementById('final-gpa').textContent = 'ERROR';
+                return;
+            } else {
+                messageBox.classList.add('hidden');
+            }
+
+            const finalGPA = totalCredits > 0 ? (totalWeightedPoints / totalCredits) : 0;
+
+            document.getElementById('total-weighted-points').textContent = totalWeightedPoints.toFixed(2);
+            document.getElementById('total-credits').textContent = totalCredits.toFixed(1);
+            document.getElementById('final-gpa').textContent = finalGPA.toFixed(3);
+        }
+
+        /**
+         * Populates the scale reference table in the HTML.
+         */
+        function populateScaleTable() {
+            const tableBody = document.getElementById('scale-table-body');
+            let html = '';
+            // Iterate from 100 down to 60 to build the table
+            for (let grade = 100; grade >= 60; grade--) {
+                const data = GPA_SCALE[grade];
+                if (data) {
+                    html += `
+                        <tr class="${grade % 5 === 0 ? 'bg-blue-50 font-medium' : 'hover:bg-gray-50'}">
+                            <td class="px-3 py-2 whitespace-nowrap text-gray-900">${grade}</td>
+                            <td class="px-3 py-2 whitespace-nowrap">${data.cp.toFixed(1)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap">${data.h.toFixed(1)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap ahs-text-red font-semibold">${data.ap.toFixed(1)}</td>
+                        </tr>
+                    `;
+                }
+            }
+            // Add the F grade
+             html += `
+                <tr class="bg-red-50 font-medium">
+                    <td class="px-3 py-2 whitespace-nowrap text-gray-900">F (59 & below)</td>
+                    <td class="px-3 py-2 whitespace-nowrap">0.0</td>
+                    <td class="px-3 py-2 whitespace-nowrap">0.0</td>
+                    <td class="px-3 py-2 whitespace-nowrap">0.0</td>
+                </tr>
+            `;
+
+            tableBody.innerHTML = html;
+        }
+
+        // Initial setup on load
+        window.onload = function() {
+            addCourse(); // Start with one course row
+            populateScaleTable(); // Populate the reference table
+        };
+    </script>
+</body>
+</html>
